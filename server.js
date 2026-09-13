@@ -18,21 +18,22 @@ app.get("/", (req, res) => {
   res.json({
     status: "online",
     name: "NOVA AI Backend",
-    version: "1.0.0",
+    version: "1.1.0",
     features: [
       "General AI",
       "Learning Assistant",
       "Research",
       "Coding",
-      "Market Intelligence"
+      "Market Intelligence",
+      "Blender Task Queue"
     ]
   });
 });
 
-/* SAFE TEXT EXTRACTION */
+/* EXTRACT AI TEXT */
 function extractText(data) {
   if (data.output_text) {
-    return data.output_text;
+    return data.output_text.trim();
   }
 
   let text = "";
@@ -52,8 +53,8 @@ function extractText(data) {
   return text.trim();
 }
 
-/* CALL AI */
-async function askAI(instructions, userText, useWeb = false) {
+/* CALL OPENAI */
+async function askAI(instructions, userText, useWeb = false, tokenLimit = 800) {
   if (!OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not configured in Render.");
   }
@@ -62,7 +63,7 @@ async function askAI(instructions, userText, useWeb = false) {
     model: "gpt-5.6-luna",
     instructions: instructions,
     input: userText,
-    max_output_tokens: 1200
+    max_output_tokens: tokenLimit
   };
 
   if (useWeb) {
@@ -89,6 +90,7 @@ async function askAI(instructions, userText, useWeb = false) {
 
   if (!response.ok) {
     console.error("OpenAI API error:", data);
+
     throw new Error(
       data.error?.message || "AI API request failed"
     );
@@ -118,35 +120,35 @@ app.post("/chat", async (req, res) => {
       });
     }
 
-    const recentHistory = history.slice(-12);
+    const recentHistory = history.slice(-8);
 
     const conversation = recentHistory
       .map(message => {
-        const role = message.role === "assistant"
-          ? "NOVA"
-          : "User";
+        const role =
+          message.role === "assistant"
+            ? "NOVA"
+            : "User";
 
         return `${role}: ${message.content}`;
       })
       .join("\n\n");
 
     const instructions = `
-You are NOVA AI, a highly intelligent, helpful and clear AI assistant.
+You are NOVA AI, an intelligent and helpful AI assistant.
 
 Current mode: ${mode}
 
-Your behavior:
-- Give accurate and useful answers.
-- Explain difficult topics simply when needed.
+Rules:
+- Give accurate, useful answers.
+- Be clear and practical.
+- Explain difficult topics simply.
 - Do not invent facts.
-- If information may be current or changing, clearly say that live research is needed.
-- Be practical and organized.
-- Use headings and bullet points when useful.
-- Do not claim to have performed actions you did not perform.
-- For financial topics, provide educational research and risk-aware information, never guaranteed profits.
-- For coding, provide complete working code and explain important steps.
-- For learning, teach step by step.
-- For research, distinguish facts, assumptions and uncertainty.
+- Use headings or bullets when helpful.
+- Do not claim to perform actions you did not perform.
+- For financial questions, provide educational and risk-aware information.
+- For coding, give working code.
+- For learning, explain step by step.
+- Keep normal answers concise unless more detail is needed.
 - You are NOVA AI, not ChatGPT.
 
 Conversation:
@@ -155,7 +157,9 @@ ${conversation}
 
     const reply = await askAI(
       instructions,
-      "Continue the conversation and answer the user's latest message."
+      "Answer the user's latest message.",
+      false,
+      800
     );
 
     res.json({ reply });
@@ -183,55 +187,49 @@ app.post("/market-intelligence", async (req, res) => {
     const marketInstructions = `
 You are NOVA Market Intelligence, an evidence-based financial research assistant.
 
-Your job is to investigate markets using current web information when available.
+Use current web information when available.
 
-Analyze:
-- Market context
-- Recent relevant news
-- Company or index fundamentals when relevant
-- Sector strength or weakness
-- Technical context only when reliable data is available
-- Bullish scenario
-- Bearish scenario
-- Main risks
-- What could invalidate the analysis
+Analyze only the most relevant information.
 
 Required format:
 
 MARKET OUTLOOK
-Explain the current broad situation.
+Brief current situation.
 
 PREDICTIVE SCENARIO
-Give possible scenarios, not certainty or guaranteed predictions.
+Possible outcome, not certainty.
 
 BULLISH SCENARIO
-What conditions could support upward movement?
+Conditions that could support upward movement.
 
 BEARISH SCENARIO
-What conditions could support downward movement?
+Conditions that could support downward movement.
 
 KEY EVIDENCE
-List the most important evidence.
+3 to 5 important evidence points.
 
 RISK FACTORS
-Explain what could go wrong.
+Main risks.
 
 CONFIDENCE
-Use Low, Medium or High and explain why.
+Low, Medium, or High, with one short reason.
 
 IMPORTANT:
+- Keep the complete answer under 500 words.
+- Be concise and avoid repetition.
 - Never guarantee profit.
 - Never claim certainty about future prices.
-- Never tell the user to blindly buy or sell.
+- Never tell users to blindly buy or sell.
 - Clearly separate facts from interpretation.
 - If live data is unavailable, say so honestly.
-- This is educational market research, not personalized financial advice.
+- This is educational research, not personalized financial advice.
 `;
 
     const reply = await askAI(
       marketInstructions,
       question,
-      true
+      true,
+      700
     );
 
     res.json({
